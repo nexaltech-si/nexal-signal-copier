@@ -1,0 +1,35 @@
+services:
+  mt5:
+    build:
+      dockerfile: Dockerfile
+    container_name: mt5
+    volumes:
+      - ./config:/config
+      - ./protection_config:/protection_config
+    env_file:
+      - .env
+    environment:
+      MT5_API_PORT: "5001"
+    restart: unless-stopped
+    # Loopback only (audit findings C-01/C-02). Docker-published ports bypass
+    # UFW, so "3001:3000" exposed VNC and the order API to the whole internet.
+    # The bot and dashboard reach mt5:5001 / mt5:3001 over mt5-net; for direct
+    # access from your machine use an SSH tunnel:
+    #   ssh -L 3001:127.0.0.1:3001 -L 5002:127.0.0.1:5002 root@<server>
+    ports:
+      - "127.0.0.1:3001:3000"   # VNC web interface
+      - "127.0.0.1:5002:5001"   # MT5 Flask API
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - default
+      - mt5-net
+
+networks:
+  default:
+    driver: bridge
+  # Shared with the bot and dashboard (../docker-compose.yml). Created once, by whoever
+  # comes first:  docker network create mt5-net   (./deploy.sh --init does it for you)
+  mt5-net:
+    name: mt5-net
+    external: true

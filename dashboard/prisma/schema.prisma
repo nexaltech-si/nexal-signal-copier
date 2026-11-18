@@ -1,0 +1,1136 @@
+// Prisma Schema for Next.js Dashboard
+// Uses the same database as the Python bot
+
+generator client {
+    provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Trading Sessions - Track bot run sessions
+model TradingSession {
+  id        String   @id @default(uuid())
+  startedAt DateTime @default(now())
+  stoppedAt DateTime?
+
+  // Statistics
+  totalSignals      Int   @default(0)
+  signalsExecuted   Int   @default(0)
+  signalsRejected   Int   @default(0)
+  totalProfitLoss   Float @default(0.0)
+  startingBalance   Float
+  endingBalance     Float?
+
+  // Relations
+  signals Signal[]
+  trades  Trade[]
+
+  @@map("trading_sessions")
+}
+
+// Signals - Raw signals from Telegram
+model Signal {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Signal Details
+  action          String // OPEN, CLOSE, MODIFY, etc.
+  orderType       String // BUY, SELL
+  symbol          String
+  entryPrice      Float?
+  entryRangeMin   Float? // Range entry lower bound
+  entryRangeMax   Float? // Range entry upper bound
+  stopLoss        Float?
+  takeProfit String? // JSON string: Array of TP levels
+  lotSize    Float?
+  confidence Float  @default(0.5)
+
+  // Telegram Source
+  channelId      String
+  channelName    String?
+  messageId      Int
+  rawMessage     String
+  messageHash    String // For deduplication
+  forwardedMsgId Int?    // Telegram message ID in the signal forward channel
+  imageData      String? // Base64-encoded image attached to the signal message
+
+  // Status
+  status String @default("PENDING") // PENDING, VALIDATED, AWAITING_APPROVAL, PROCESSING, EXECUTED, RUNNING, REJECTED, EXPIRED, FAILED, CLOSED
+
+  // AI Verification (DeepSeek)
+  aiVerified          Boolean @default(false)
+  aiVerifiedAt        DateTime?
+  aiVerificationType  String? // TRADE_SIGNAL, INFO_MESSAGE, REPLY, WRONG_EXECUTION, UNCLEAR
+  aiVerificationScore Float? // Confidence score 0-1
+  aiVerificationNotes String? // Additional context from AI
+  aiRawResponse       String? // Verbatim text the extraction AI returned (pre-JSON-parse)
+  
+  // Risk Assessment
+  riskApproved       Boolean @default(false)
+  calculatedLotSize  Float?
+  riskPercent        Float?
+  riskAmount         Float?
+  stopLossPips       Float?
+  takeProfitPips     Float?
+  riskRewardRatio    Float?
+  riskWarnings       String? // JSON string
+  rejectionReason    String?
+
+  // Relations
+  sessionId String?
+  session   TradingSession? @relation(fields: [sessionId], references: [id])
+
+  trades      Trade[]
+  tradePlan   TradePlan?
+  aiDecisions AIDecision[]
+
+  // Plan signal fields
+  isPlan   Boolean @default(false)
+  planData String? // JSON: {primary: {...}, fallback: {...}}
+
+  @@unique([channelId, messageId])
+  @@index([channelId])
+  @@index([symbol])
+  @@index([status])
+  @@index([createdAt])
+  @@index([messageHash, createdAt])
+  @@map("signals")
+}
+
+// TradePlan - Conditional multi-step trading plans (primary + optional fallback entry)
+model TradePlan {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Nullable + SetNull so deleting the source signal PRESERVES the plan
+  // (previously Cascade silently hard-deleted plans when a signal was removed).
+  signalId String? @unique
+  signal   Signal? @relation(fields: [signalId], references: [id], onDelete: SetNull)
+
+  symbol    String
+  orderType String // BUY | SELL
+
+  // Primary entry
+  primaryEntryMin    Float
+  primaryEntryMax    Float
+  primarySl          Float
+  primarySlCondition String?
+  primaryTps         String  // JSON array of TP price levels
+
+  // Fallback re-entry (optional — triggered only if primary is stopped out)
+  fallbackOrderType String? // BUY | SELL — may differ from primary for opposite-direction plans
+  fallbackEntryMin  Float?
+  fallbackEntryMax  Float?
+  fallbackSl        Float?
+  fallbackTps       String? // JSON array
+
+  // WATCHING | PRIMARY_ACTIVE | FALLBACK_WATCHING | FALLBACK_ACTIVE | EXPIRED | FILTERED | CANCELLED
+  status       String  @default("WATCHING")
+  filterReason String?
+
+  // Linked trade IDs set when each leg executes
+  primaryTradeId  String?
+  fallbackTradeId String?
+
+  // Per-plan execution mode — overrides global plan_auto_execute setting
+  autoExecute Boolean @default(false)
+
+  // Dashboard manual execute request — polled by watcher tick (no direct HTTP call needed)
+  manualExecuteRequested Boolean @default(false)
+  manualExecuteLeg       String? // "primary" | "fallback"
+
+  expiresAt DateTime
+
+  @@index([status])
+  @@index([symbol])
+  @@index([createdAt])
+  @@map("trade_plans")
+}
+
+// Trades - Actual executed trades on broker
+model Trade {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Trade Details
+  symbol       String
+  action       String // BUY, SELL
+  lotSize      Float
+  entryPrice   Float?
+  stopLoss     Float?
+  takeProfit   Float?
+  tpLevel      Int? // For multi-TP: 1, 2, 3, etc.
+  entryLeg     Int? // For multi-entry scale-in: 1 = primary, 2 = "MORE", etc.
+
+  // Broker IDs (MetaAPI)
+  positionId     String?
+  orderId        String?
+  dealId         String? // MT5 deal/execution ID (for reference only)
+  magicNumber    Int? // Magic number for tracking (message_id encoded)
+  provider       String? // Trading provider/account that executed it (metaapi | mt5_rest)
+  brokerResponse String? // JSON string
+
+  // Execution
+  executedAt DateTime?
+  closedAt   DateTime?
+  closePrice Float?
+
+  // Results
+  profitLoss     Float?
+  profitLossPips Float?
+
+  // Status
+  status         String @default("PENDING") // PENDING, EXECUTING, EXECUTED, CLOSED, CANCELLED, FAILED
+  executionError String?
+
+  // Multi-TP handling
+  isMultiTp      Boolean @default(false)
+  parentTradeId  String? // Links to parent trade
+  parentTrade    Trade?  @relation("ParentChild", fields: [parentTradeId], references: [id])
+  childTrades    Trade[] @relation("ParentChild")
+
+  // Auto TP/Trailing SL Settings
+  autoTpEnabled          Boolean @default(true)
+  trailingStopEnabled    Boolean @default(true)
+  breakEvenEnabled       Boolean @default(true)
+  autoPartialEnabled     Boolean @default(true)
+  originalStopLoss       Float?
+  originalTakeProfit     Float?
+  trailingActivated      Boolean @default(false)
+  breakEvenActivated     Boolean @default(false)
+  autoPartialActivated   Boolean @default(false)
+  highestPrice           Float? // Track highest price for trailing
+  lowestPrice            Float? // Track lowest price for trailing (for sells)
+  lastModifiedAt         DateTime?
+  aiPositionReduced      Boolean @default(false)
+  aiTpExtended           Boolean @default(false)
+
+  // Relations
+  signalId  String
+  signal    Signal          @relation(fields: [signalId], references: [id])
+  sessionId String?
+  session   TradingSession? @relation(fields: [sessionId], references: [id])
+
+  tradeActions    TradeAction[]
+  marketAnalyses  MarketAnalysis[]
+  aiDecisions     AIDecision[]
+
+  @@index([positionId])
+  @@index([orderId])
+  @@index([magicNumber])
+  @@index([symbol])
+  @@index([provider])
+  @@index([status])
+  @@index([signalId])
+  @@map("trades")
+}
+
+// Trade Actions - Track all modifications to trades
+model TradeAction {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  // Action details
+  actionType String // OPEN, CLOSE, MODIFY_SL, MODIFY_TP, PARTIAL_CLOSE, TRAILING_STOP, BREAKEVEN, AUTO_TP, AUTO_PARTIAL
+  success    Boolean
+  details    String? // JSON string
+
+  // Before/After values
+  oldStopLoss   Float?
+  newStopLoss   Float?
+  oldTakeProfit Float?
+  newTakeProfit Float?
+  currentPrice  Float? // Price at time of action
+  profitPips    Float? // Profit in pips at time of action
+
+  // Trigger
+  triggeredBy   String // telegram_message, system, manual, auto_trailing, auto_breakeven, auto_tp
+  triggerSource String? // Message ID or system event
+
+  // Relations
+  tradeId String
+  trade   Trade  @relation(fields: [tradeId], references: [id])
+
+  @@index([tradeId])
+  @@index([actionType])
+  @@map("trade_actions")
+}
+
+// Message Mappings - Links Telegram messages to trades
+model MessageMapping {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  // Telegram message
+  chatId      String
+  messageId   Int
+  messageHash String
+
+  // Mapped entities
+  signalId    String?
+  tradeIds    String? // JSON string: Array of trade IDs
+  orderIds    String? // JSON string: Array of MetaAPI order IDs
+  positionIds String? // JSON string: Array of MetaAPI position IDs
+  magicNumber Int? // Magic number used for tracking
+
+  // Type
+  mappingType String // NEW_SIGNAL, UPDATE, REPLY, EDIT
+
+  @@unique([chatId, messageId])
+  @@index([chatId])
+  @@index([signalId])
+  @@map("message_mappings")
+}
+
+// Signal Replies - Track all user replies to trading signals
+model SignalReply {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  // Telegram Reply Info
+  chatId            String
+  replyMessageId    Int // The reply message ID
+  replyToMessageId  Int // The original signal message ID being replied to
+  replyText         String // The actual reply content/command
+  userId            String? // Telegram user ID if available
+  username          String? // Telegram username if available
+
+  // Signal Context
+  signalId     String? // Linked signal (if found)
+  magicNumber  Int? // Magic number for tracking
+  symbol       String? // Symbol from the trades
+  
+  // Action Tracking
+  actionTaken       Boolean @default(false) // Was any action performed
+  actionType        String? // CLOSE, MODIFY_SL, MODIFY_TP, BREAKEVEN, PARTIAL_CLOSE, CANCEL, UNKNOWN
+  actionSuccess     Boolean @default(false) // Did the action succeed
+  actionResult      String? // Result message or error
+  actionDetails     String? // JSON string with full details
+  
+  // Affected Trades
+  affectedTradeIds  String? // JSON string: Array of trade IDs affected
+  positionsClosed   Int @default(0) // Number of positions closed
+  ordersCancelled   Int @default(0) // Number of orders cancelled
+  
+  // Processing
+  processed         Boolean @default(false) // Was the reply processed
+  processingError   String? // Any error during processing
+  aiParsed          Boolean @default(false) // Was AI used to parse the command
+  
+  @@unique([chatId, replyMessageId])
+  @@index([replyToMessageId])
+  @@index([signalId])
+  @@index([magicNumber])
+  @@index([actionTaken])
+  @@index([createdAt])
+  @@map("signal_replies")
+}
+
+// System Events - Track bot events and errors
+model SystemEvent {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  // Event details
+  eventType String // ERROR, WARNING, INFO, TRADE, NOTIFICATION
+  severity  String // LOW, MEDIUM, HIGH, CRITICAL
+  message   String
+  details   String? // JSON string
+
+  // Context
+  module     String?
+  function   String?
+  stackTrace String?
+
+  @@index([eventType])
+  @@index([severity])
+  @@index([createdAt])
+  @@map("system_events")
+}
+
+// Channel cursors - the last Telegram message the bot finished handling per monitored channel.
+// Lets the bot detect messages it missed while offline (see src/services/catchup_service.py).
+model ChannelCursor {
+  channelId     String    @id
+  lastMessageId Int
+  lastMessageAt DateTime?
+  updatedAt     DateTime  @updatedAt
+
+  @@map("channel_cursors")
+}
+
+// Signal-continuity marks that must survive a restart (src/services/signal_continuity.py):
+// AWAITING_LEVELS = instant entry on a temporary SL waiting for its follow-up,
+// DELETED = deleted signal message whose repost should update it.
+model ContinuityMark {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  kind      String // AWAITING_LEVELS | DELETED
+  signalId  String
+  symbol    String?
+  chatId    String?
+  messageId Int?
+  expiresAt DateTime
+
+  @@index([kind, expiresAt])
+  @@index([signalId])
+  @@map("continuity_marks")
+}
+
+// News Events - Track economic calendar events
+model NewsEvent {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Event Identification
+  newsHash    String   @unique // MD5 hash of title|country|date|impact
+  newsTitle   String
+  newsCountry String
+  newsDate    String   // ISO format with timezone
+  newsImpact  String   // High, Medium, Low, Holiday
+
+  // Event Data
+  forecast String?
+  previous String?
+  actual   String? // Actual value after event occurs
+
+  // Tracking
+  actualFetchedAt DateTime? // When actual value was fetched
+  lastAccessed    DateTime?
+
+  @@index([newsHash])
+  @@index([newsDate])
+  @@index([newsImpact])
+  @@map("news_events")
+}
+
+// Market Analysis - AI-powered market condition analysis
+model MarketAnalysis {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  // Symbol and Position Info
+  symbol       String
+  positionType String // BUY, SELL, or NULL for general analysis
+  positionId   String? // MetaAPI position ID (if linked to trade)
+
+  // Market Conditions (AI Analysis Results)
+  trend             String // strong_up, up, sideways, down, strong_down
+  volatility        String // high, medium, low
+  momentum          String // strong_up, up, neutral, down, strong_down
+  trendStrength     Float? // 0.0 - 1.0
+  volatilityPercent Float? // Percentage
+
+  // AI Recommendations
+  recommendBreakeven     Boolean @default(false)
+  recommendTpAdjustment  Boolean @default(false)
+  recommendTpDirection   String? // higher, lower
+  recommendReducePosition Boolean @default(false)
+  recommendTightStop     Boolean @default(false)
+  keepPositionOpen       Boolean @default(true)
+
+  // Confidence and Metadata
+  confidence    Float   @default(0.0) // 0.0 - 1.0
+  analysisType  String  @default("POSITION") // POSITION, GENERAL, PRE_ENTRY
+  
+  // Market Data Used
+  candlesAnalyzed Int? // Number of candles analyzed
+  timeframe       String? // 1H, 4H, 1D, etc.
+  
+  // Actions Taken (if any)
+  actionTaken     Boolean @default(false)
+  actionType      String? // AI_BREAKEVEN, AI_TP_EXTENSION, AI_PARTIAL_CLOSE
+  actionDetails   String? // JSON string with action details
+
+  // Linked Trade/Position
+  tradeId         String?
+  trade           Trade?  @relation(fields: [tradeId], references: [id])
+  
+  // Profit at time of analysis (if position)
+  profitPips      Float?
+  currentPrice    Float?
+
+  // Notification
+  notificationSent Boolean @default(false)
+  notifiedAt       DateTime?
+
+  @@index([symbol])
+  @@index([positionId])
+  @@index([tradeId])
+  @@index([createdAt])
+  @@index([analysisType])
+  @@map("market_analysis")
+}
+
+// Drawdown Breach - Track drawdown violations and trading pauses
+model DrawdownBreach {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  
+  // Breach Details
+  breachType       String // DAILY, OVERALL
+  drawdownPercent  Float  // Actual drawdown percentage at breach
+  limitPercent     Float  // The limit that was breached
+  accountId        String // MetaAPI account ID
+  trackerId        String // Risk management tracker ID
+  
+  // Trading Pause
+  tradingPaused    Boolean @default(true)
+  pausedAt         DateTime @default(now())
+  resumedAt        DateTime? // When trading was resumed (new day or manual)
+  
+  // Actions Taken
+  losersClosedCount Int @default(0) // Number of losing positions closed
+  closedPositionIds String? // JSON string: Array of position IDs that were closed
+  pendingOrdersCancelledCount Int @default(0) // Number of pending orders cancelled
+  cancelledOrderIds String? // JSON string: Array of order IDs that were cancelled
+  
+  // Broker Time (for accurate day tracking)
+  brokerTime       String?
+  brokerDate       String? // YYYY-MM-DD for daily reset logic
+  
+  // Status
+  isActive         Boolean @default(true) // False when resolved/reset
+  resolvedAt       DateTime?
+  resolvedReason   String? // NEW_DAY, MANUAL_RESET, BOT_RESTART
+  
+  @@index([breachType])
+  @@index([accountId])
+  @@index([isActive])
+  @@index([brokerDate])
+  @@map("drawdown_breaches")
+}
+
+// System Health - Real-time health status for dashboard
+model SystemHealth {
+  id        String   @id @default(uuid())
+  updatedAt DateTime @updatedAt
+
+  // Overall status
+  overallStatus String // healthy, degraded, unhealthy, partial
+  lastCheck     DateTime
+
+  // Component statuses (JSON)
+  components String // JSON: { "Database": {...}, "MetaAPI": {...}, ... }
+
+  // Summary stats
+  totalComponents     Int
+  healthyComponents   Int
+  degradedComponents  Int
+  unhealthyComponents Int
+  unknownComponents   Int
+
+  @@map("system_health")
+}
+
+// Settings - Application configuration stored in database
+model Setting {
+  id        String   @id @default(uuid())
+  key       String   @unique // Setting key (e.g., "MAX_RISK_PER_TRADE_PERCENT")
+  value     String   // Setting value (stored as string, parsed by type)
+  valueType String   @default("STRING") // STRING, INT, FLOAT, BOOL, JSON
+  category  String   // Category for grouping (e.g., "RISK_MANAGEMENT", "TRADING", "AI")
+  description String? // Human-readable description
+  isSecret  Boolean  @default(false) // If true, value should be hidden in UI
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  @@index([category])
+  @@map("settings")
+}
+
+// User Settings - Clerk user-specific dashboard settings
+model UserSettings {
+  id                         String   @id @default(uuid())
+  userId                     String   @unique // Clerk user ID
+  smartCloseEnabled          Boolean  @default(true)
+  smartClosePercentage       Float    @default(50.0)
+  smartCloseSetBreakeven     Boolean  @default(true)
+  defaultRefreshInterval     Int      @default(5)
+  notificationsEnabled       Boolean  @default(true)
+  tradeNotificationsEnabled  Boolean  @default(true)
+  systemNotificationsEnabled Boolean  @default(true)
+  errorNotificationsEnabled  Boolean  @default(true)
+  debugModeEnabled           Boolean  @default(false)
+  consoleLogsEnabled         Boolean  @default(false)
+  disabledConnections        String   @default("[]") // JSON string of disabled connection names
+  newsShareConfig            String   @default("{}") // JSON string of the economic-calendar share/branding config
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  @@map("user_settings")
+}
+
+// Monitored Channels - Telegram channels being monitored for signals
+model MonitoredChannel {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Channel Identification
+  channelId       String  @unique // Telegram channel ID
+  channelTitle    String? // Channel display name
+  channelUsername String? // Channel username (without @)
+
+  // Channel Metadata
+  accessHash        String? // Telegram access hash
+  isBroadcast       Boolean @default(true)
+  isMegagroup       Boolean @default(false)
+  participantsCount Int?
+
+  // Channel Photo
+  photoUrl String? // Base64 encoded photo or URL
+
+  // Monitoring Settings
+  isActive Boolean @default(true)
+
+  @@index([channelId])
+  @@index([isActive])
+  @@map("monitored_channels")
+}
+
+// Discord Channels - server channels chosen in the dashboard as signal sources.
+// Each server (guild) has its own selection; only these channels are listened to.
+model DiscordChannel {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  channelId   String  @unique // Discord channel id (snowflake); also Signal.channelId
+  channelName String?
+  guildId     String
+  guildName   String?
+  isActive    Boolean @default(true)
+
+  @@index([guildId])
+  @@map("discord_channels")
+}
+
+// Discord Messages - local 32-bit id for each Discord message. Discord ids are
+// 64-bit snowflakes; Signal.messageId and everything keyed on it are Int.
+model DiscordMessage {
+  id        Int      @id @default(autoincrement()) // the message id the pipeline uses
+  createdAt DateTime @default(now())
+  channelId String
+  messageId String   @unique // Discord snowflake
+
+  @@index([channelId, id])
+  @@map("discord_messages")
+}
+
+// AI Decisions - Track all AI decisions for learning and analysis
+model AIDecision {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  
+  // Decision Type
+  decisionType String // ENTRY_VALIDATION, POSITION_SIZING, CORRELATION_CHECK, RISK_OVERRIDE, TP_OPTIMIZATION, etc.
+  
+  // Decision Details
+  decision     String // APPROVED, REJECTED, ADJUSTED, EMERGENCY_CLOSE, etc.
+  confidence   Float // 0.0 - 1.0
+  reason       String // Human-readable reason
+  
+  // Context (JSON)
+  inputData    String // JSON: Input data that led to decision
+  outputData   String? // JSON: Output/recommendation from AI
+  marketData   String? // JSON: Market conditions at time of decision
+  
+  // Related Entities
+  signalId   String?
+  signal     Signal? @relation(fields: [signalId], references: [id], onDelete: SetNull)
+  tradeId    String?
+  trade      Trade?  @relation(fields: [tradeId], references: [id], onDelete: SetNull)
+  positionId String? // MetaAPI position ID
+  symbol     String?
+  
+  // Outcome Tracking (filled after trade closes)
+  outcome         String? // PROFITABLE, LOSS, BREAKEVEN, PENDING
+  profitLoss      Float? // Actual P/L if trade closed
+  profitLossPips  Float?
+  wasCorrect      Boolean? // Was the AI decision correct in hindsight
+  
+  // Performance Metrics
+  executionTimeMs Int? // How long AI took to decide
+  
+  @@index([decisionType])
+  @@index([decision])
+  @@index([signalId])
+  @@index([tradeId])
+  @@index([outcome])
+  @@index([createdAt])
+  @@map("ai_decisions")
+}
+
+// AI Configuration - Store AI settings in database (overrides .env)
+model AIConfiguration {
+  id        String   @id @default(uuid())
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  
+  // Feature Toggles
+  enableEntryValidation     Boolean @default(true)
+  enablePositionSizing      Boolean @default(true)
+  enableCorrelationCheck    Boolean @default(true)
+  enableRiskOverride        Boolean @default(true)
+  enableMultiTimeframe      Boolean @default(false)
+  enableNewsIntegration     Boolean @default(false)
+  enableLearning            Boolean @default(false)
+  enableAIVision             Boolean @default(true)
+  
+  // Confidence Thresholds
+  entryValidationMinConfidence Float @default(0.7)
+  riskOverrideMinConfidence    Float @default(0.8)
+  
+  // Position Sizing
+  baseRiskPercent     Float @default(2.0) // Base risk per trade
+  minLotSize          Float @default(0.01)
+  maxLotSize          Float @default(1.0)
+  volatilityMultiplier Float @default(1.0) // Adjust for volatility
+  
+  // Correlation Management
+  maxCorrelationExposure Float @default(2.0) // Max correlation score
+  maxSameDirectionTrades Int   @default(3) // Max trades in same direction
+  
+  // Risk Override
+  emergencyDrawdownPercent Float @default(5.0) // Emergency close at X% drawdown
+  maxLeverageRatio         Float @default(10.0) // Max leverage allowed
+  
+  // Multi-Timeframe
+  enableH4Analysis  Boolean @default(true)
+  enableH1Analysis  Boolean @default(true)
+  enableM15Analysis Boolean @default(false)
+  
+  // Learning System
+  minDecisionsForLearning Int   @default(50) // Min decisions before adjusting
+  learningRate            Float @default(0.1) // How fast to adapt
+  
+  // Analysis Intervals
+  marketAnalysisIntervalSeconds Int @default(30)
+  riskCheckIntervalSeconds      Int @default(60)
+  
+  @@map("ai_configuration")
+}
+
+// AI Performance Metrics - Track AI performance over time
+model AIPerformanceMetric {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  
+  // Metric Period
+  periodStart DateTime
+  periodEnd   DateTime
+  periodType  String // DAILY, WEEKLY, MONTHLY
+  
+  // Decision Type
+  decisionType String // ENTRY_VALIDATION, POSITION_SIZING, etc.
+  
+  // Performance Stats
+  totalDecisions     Int
+  correctDecisions   Int
+  incorrectDecisions Int
+  pendingDecisions   Int
+  
+  // Success Rates
+  successRate        Float // correctDecisions / (correctDecisions + incorrectDecisions)
+  avgConfidence      Float
+  avgProfitWhenRight Float?
+  avgLossWhenWrong   Float?
+  
+  // Financial Impact
+  totalProfitFromAI Float @default(0.0)
+  totalLossFromAI   Float @default(0.0)
+  netProfitFromAI   Float @default(0.0)
+  
+  @@index([periodType])
+  @@index([decisionType])
+  @@index([periodStart])
+  @@map("ai_performance_metrics")
+}
+
+// Trade Journal Entries - Persistent notes and tags per trade
+model JournalEntry {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tradeId   String   @unique
+  notes     String   @default("")
+  tags      String   @default("[]") // JSON array of tag strings
+
+  @@index([tradeId])
+  @@map("journal_entries")
+}
+
+// Position Correlation - Track correlation between open positions
+model PositionCorrelation {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Positions
+  position1Id     String
+  position2Id     String
+  position1Symbol String
+  position2Symbol String
+  
+  // Correlation Data
+  correlationScore Float // -1.0 to 1.0
+  sameDirection    Boolean // Both BUY or both SELL
+  
+  // Risk Assessment
+  combinedExposure Float // Combined lot size
+  riskLevel        String // LOW, MEDIUM, HIGH, CRITICAL
+  
+  // Status
+  isActive Boolean @default(true) // False when one position closes
+  
+  @@index([position1Id])
+  @@index([position2Id])
+  @@index([isActive])
+  @@map("position_correlations")
+}
+
+// Channel Behavior Rules - Per-channel reply action configurations
+model ChannelBehaviorRule {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Channel Identification
+  channelId     String  // Telegram channel ID this rule applies to
+  channelTitle  String? // Channel display name (for reference)
+
+  // Rule Configuration
+  ruleName      String   // Human-readable name for this rule
+  isEnabled     Boolean  @default(true)
+  priority      Int      @default(0) // Higher priority rules are checked first
+
+  // Reply Pattern Matching
+  replyPattern  String   // Regex pattern to match reply text
+  patternType   String   @default("REGEX") // REGEX, CONTAINS, EXACT, STARTS_WITH
+  isCaseSensitive Boolean @default(false)
+
+  // Action Configuration
+  actionType    String   // CLOSE, MODIFY_SL, MODIFY_TP, BREAKEVEN, PARTIAL_CLOSE, CANCEL, IGNORE, CUSTOM
+  actionParams  String?  // JSON string with action parameters (e.g., {"percentage": 50, "sl_price": 1.0850})
+
+  // Conditions
+  conditions    String?  // JSON string with conditions (e.g., {"min_profit_pips": 20, "max_loss_percent": 5})
+
+  // Learning/Metadata
+  matchCount    Int      @default(0) // How many times this rule matched
+  successCount  Int      @default(0) // How many times the action succeeded
+  lastMatchedAt DateTime?
+  lastUsedAt    DateTime?
+
+  // Description
+  description   String?  // Human-readable description of when this rule applies
+
+  @@index([channelId])
+  @@index([isEnabled])
+  @@index([priority])
+  @@map("channel_behavior_rules")
+}
+
+// Channel Behavior Analytics - Track channel message patterns for learning
+model ChannelBehaviorAnalytics {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  // Channel Identification
+  channelId String
+
+  // Message Pattern
+  messageType   String // SIGNAL, REPLY, STATUS_UPDATE, PERFORMANCE_REPORT
+  messagePattern String // Simplified pattern (e.g., "CLOSE +{number} pips")
+  fullTextHash String // Hash of full message for deduplication
+
+  // Context
+  symbol       String?
+  action       String? // Detected action (CLOSE, MODIFY, etc.)
+  hasPips      Boolean @default(false)
+  hasPrice     Boolean @default(false)
+
+  // Outcome Tracking
+  wasHandled   Boolean @default(false)
+  actionTaken  String?
+  wasCorrect   Boolean? // Did the AI/system correctly interpret this?
+
+  // Learning Metrics
+  occurrenceCount Int @default(1)
+  confidenceScore Float @default(0.0) // 0.0 - 1.0, increases with consistent patterns
+
+  @@unique([channelId, messagePattern])
+  @@index([channelId])
+  @@index([messageType])
+  @@index([occurrenceCount])
+  @@map("channel_behavior_analytics")
+}
+
+// ============================================================
+// HERMES LOG — isolated Hermes agent data (chats + setups).
+// NOT touched by the Python bot. Written via dashboard API routes
+// (Prisma) only. Tables were created additively via raw SQL.
+// ============================================================
+
+model HermesConversation {
+  id              String    @id @default(uuid())
+  hermesSessionId String    @unique
+  title           String?
+  source          String?
+  model           String?
+  startedAt       DateTime?
+  endedAt         DateTime?
+  messageCount    Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  messages HermesMessage[]
+
+  @@map("hermes_conversations")
+}
+
+model HermesMessage {
+  id              String    @id @default(uuid())
+  conversationId  String
+  hermesMessageId String?   @unique
+  role            String
+  content         String?
+  toolName        String?
+  toolCalls       String?
+  reasoning       String?
+  tokenCount      Int?
+  timestamp       DateTime?
+  createdAt       DateTime  @default(now())
+
+  conversation HermesConversation @relation(fields: [conversationId], references: [id])
+
+  @@index([conversationId])
+  @@index([timestamp])
+  @@map("hermes_messages")
+}
+
+model HermesSetup {
+  id                   String   @id @default(uuid())
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  symbol               String
+  setupType            String // SCALP | INTRADAY | SWING
+  bias                 String // BUY | SELL
+  entryMin             Float?
+  entryMax             Float?
+  sl                   Float?
+  tps                  String? // JSON array of TP levels
+  invalidation         String?
+  reasoning            String?
+  triggerTf            String?
+  expectedHold         String?
+  riskPct              Float?
+  status               String   @default("PENDING") // PENDING|ACTIVE|TP1|TP2|TP3|SL|INVALIDATED|EXPIRED
+  linkedMessageId      String?
+  sourceConversationId String?
+
+  events HermesSetupEvent[]
+
+  @@index([symbol])
+  @@index([status])
+  @@index([createdAt])
+  @@map("hermes_setups")
+}
+
+model HermesSetupEvent {
+  id        String   @id @default(uuid())
+  setupId   String
+  eventType String // CREATED|ACTIVATED|TP_HIT|SL_HIT|INVALIDATED|EXPIRED|NOTE
+  price     Float?
+  note      String?
+  createdAt DateTime @default(now())
+
+  setup HermesSetup @relation(fields: [setupId], references: [id])
+
+  @@index([setupId])
+  @@map("hermes_setup_events")
+}
+
+// Per-customer keys for GET /api/ea/signals (the mirror-execution feed) — replaces
+// the single static EA_PUBLIC_API_KEY. Only the raw key's SHA-256 hash is stored;
+// the raw value is shown to the admin exactly once, at creation, and never again.
+// keyPrefix is a short, non-secret slice of the raw key kept only so the admin can
+// recognize a key in a list without exposing the rest of it.
+model ApiKey {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  label     String // admin-facing customer name/note
+  keyPrefix String // e.g. "ask_live_a1b2c3d4" — display only, not a secret
+  keyHash   String @unique // sha256(rawKey), hex
+
+  expiresAt DateTime? // null = never expires
+  revokedAt DateTime? // null = active; set = permanently invalid
+
+  lastUsedAt   DateTime?
+  lastUsedIp   String?
+  requestCount Int       @default(0)
+
+  createdBy String? // Clerk userId of the admin who issued it
+
+  usage      ApiKeyUsage[]
+  eaAccounts EaAccount[]
+
+  @@index([keyHash])
+  @@index([revokedAt])
+  @@index([expiresAt])
+  @@map("api_keys")
+}
+
+// One row per (key, client IP, status) for a KNOWN key (valid, expired, or
+// revoked) — the connection log behind the admin stats page. Repeat requests
+// from the same IP update that row (lastSeenAt, hits) instead of adding one; a
+// new IP gets a new row. Requests with an unrecognized key have no ApiKey row
+// to attach to and are not persisted here (see route.ts).
+model ApiKeyUsage {
+  id         String   @id @default(uuid())
+  createdAt  DateTime @default(now()) // first request from this IP
+  lastSeenAt DateTime @default(now())
+  hits       Int      @default(1)
+
+  apiKeyId String
+  apiKey   ApiKey @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+
+  ip        String?
+  userAgent String? // latest seen
+  endpoint  String // latest seen
+  status    String // "ok" | "expired" | "revoked"
+
+  @@unique([apiKeyId, ip, status])
+  @@index([apiKeyId, lastSeenAt])
+  @@map("api_key_usage")
+}
+
+// One row per MT5 terminal running the copier EA (NexalSignalMirrorEA v2+),
+// upserted from its periodic POST /api/ea/report. Holds the latest state only —
+// what the Trade Copier page shows; history lives in EaEvent. One API key can
+// drive several accounts, hence the (apiKeyId, login, server) key.
+model EaAccount {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  apiKeyId String
+  apiKey   ApiKey @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+
+  login    String
+  server   String
+  broker   String?
+  name     String?
+  currency String?
+  leverage Int?
+
+  eaVersion     String?
+  mode          String? // LIVE | DRY
+  halted        Boolean @default(false) // daily-loss halt: no new opens
+  sizing        String? // human-readable, e.g. "RISK 1.00%"
+  pollSeconds   Int?
+  reportSeconds Int?
+
+  balance    Float?
+  equity     Float?
+  margin     Float?
+  freeMargin Float?
+
+  lastSeenAt   DateTime
+  lastIp       String?
+  feedOk       Boolean @default(true) // EA's last snapshot poll succeeded
+  pollFailures Int     @default(0)
+  lastError    String?
+
+  positionsCount Int     @default(0)
+  ordersCount    Int     @default(0)
+  links          String? // JSON: the EA's master->mirror ticket links with live values
+
+  events EaEvent[]
+
+  @@unique([apiKeyId, login, server])
+  @@index([lastSeenAt])
+  @@map("ea_accounts")
+}
+
+// What a copier EA did (OPEN/CLOSE/PARTIAL/MODIFY/PLACE/CANCEL/SKIP/ERROR...),
+// as reported by the EA itself.
+model EaEvent {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  accountId String
+  account   EaAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  type         String
+  symbol       String?
+  masterTicket String?
+  mirrorTicket String?
+  message      String
+
+  @@index([accountId, createdAt])
+  @@map("ea_events")
+}
+
+// Equity Snapshots - Periodic balance/equity samples for the equity curve chart
+model EquitySnapshot {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  balance       Float
+  equity        Float
+  margin        Float
+  freeMargin    Float
+  openPositions Int
+  currency      String @default("USD")
+
+  @@index([createdAt])
+  @@map("equity_snapshots")
+}
+
+// Notification inbox - one row per event fanned out by src/services/event_pusher.py.
+// Backs the dashboard bell, the live SSE stream and Web Push payloads.
+model AppNotification {
+  id        String    @id @default(uuid())
+  createdAt DateTime  @default(now())
+  category  String? // notification_filter_service category id
+  type      String // SIGNAL, TRADE, SYSTEM, CONNECTION
+  severity  String // INFO, SUCCESS, WARNING, ERROR
+  title     String
+  body      String    @default("")
+  url       String? // Dashboard path opened when the notification is tapped
+  data      String? // JSON string
+  readAt    DateTime?
+
+  @@index([createdAt])
+  @@index([readAt])
+  @@map("app_notifications")
+}
+
+// Web Push subscriptions - one row per browser/device that enabled push.
+model PushSubscription {
+  id            String    @id @default(uuid())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  userId        String? // Clerk user ID that registered the device
+  endpoint      String    @unique
+  p256dh        String
+  auth          String
+  userAgent     String?
+  lastSuccessAt DateTime?
+  failureCount  Int       @default(0)
+
+  @@map("push_subscriptions")
+}

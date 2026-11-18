@@ -1,0 +1,11 @@
+numpy>=1.22
+pandas>=1.4
+pytz
+python-dotenv
+flasgger
+python-json-logger
+flask
+flask-limiter
+flask-socketio
+marshmallow
+MetaTrader5

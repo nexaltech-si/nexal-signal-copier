@@ -1,0 +1,10 @@
+# MT5 API Requirements
+flask
+flasgger
+python-dotenv
+marshmallow
+pytest
+flask-socketio
+eventlet
+orjson
+MetaTrader5

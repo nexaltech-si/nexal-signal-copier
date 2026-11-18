@@ -1,0 +1,482 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Light mode */
+    --background: 234 62% 97%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 213 95% 48%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 20% 93%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 220 20% 93%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 220 20% 91%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 28% 88%;
+    --input: 220 28% 88%;
+    --ring: 213 95% 48%;
+    --radius: 0.625rem;
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 100%;
+    --gold: 38 97% 50%;
+    --chart-1: 213 95% 48%;
+    --chart-2: 142 76% 36%;
+    --chart-3: 173 58% 39%;
+    --chart-4: 38 97% 50%;
+    --chart-5: 270 70% 60%;
+  }
+
+  .dark {
+    /* Deep navy AI canvas palette */
+    --background: 222 42% 6%;
+    --foreground: 210 40% 96%;
+    --card: 222 41% 9%;
+    --card-foreground: 210 40% 96%;
+    --popover: 222 41% 11%;
+    --popover-foreground: 210 40% 96%;
+    --primary: 207 100% 60%;
+    --primary-foreground: 222 47% 5%;
+    --secondary: 222 30% 14%;
+    --secondary-foreground: 210 40% 96%;
+    --muted: 222 30% 14%;
+    --muted-foreground: 215 20% 50%;
+    --accent: 222 30% 18%;
+    --accent-foreground: 210 40% 96%;
+    --destructive: 346 87% 55%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 222 28% 16%;
+    --input: 222 30% 14%;
+    --ring: 207 100% 60%;
+    --success: 158 64% 50%;
+    --success-foreground: 222 47% 5%;
+    --gold: 38 97% 58%;
+    --chart-1: 207 100% 60%;
+    --chart-2: 158 64% 50%;
+    --chart-3: 38 97% 58%;
+    --chart-4: 270 80% 65%;
+    --chart-5: 185 100% 50%;
+  }
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  /* ── AI dots canvas — applied to html so it's fixed behind everything ── */
+  html {
+    /* Light: indigo dot grid + soft centre glow */
+    background-color: #f2f3fc;
+    background-image:
+      radial-gradient(circle at 50% 20%, rgba(99, 102, 241, 0.12), transparent 55%),
+      radial-gradient(circle at 88% 82%, rgba(139, 92, 246, 0.07), transparent 40%),
+      radial-gradient(rgba(99, 102, 241, 0.13) 1px, transparent 1px);
+    background-size: 100% 100%, 100% 100%, 24px 24px;
+    background-attachment: fixed;
+  }
+  html.dark {
+    /* Dark: clean dark canvas with subtle dot grid and gentle ambient atmosphere */
+    background-color: #090d16;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -20%, rgba(59, 130, 246, 0.08), transparent 70%),
+      radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+    background-size: 100% 100%, 24px 24px;
+    background-attachment: fixed;
+  }
+
+  body {
+    background-color: transparent;
+    color: hsl(var(--foreground));
+    min-height: 100vh;
+    font-family: var(--font-body), system-ui, -apple-system, sans-serif;
+  }
+
+  /* Display face for headings; mono for technical readouts */
+  h1, h2, h3, .font-display {
+    font-family: var(--font-display), var(--font-body), system-ui, sans-serif;
+    letter-spacing: -0.02em;
+  }
+  code, kbd, pre, samp {
+    font-family: var(--font-mono), ui-monospace, monospace;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      transition-duration: 1ms !important;
+      animation-duration: 1ms !important;
+    }
+  }
+
+  /* ── Tech canvas — ambient overlay on main content, no solid base ── */
+  /* Light mode */
+  .tech-canvas {
+    background:
+      radial-gradient(circle at 92% 6%, rgba(99, 102, 241, 0.05), transparent 28%);
+  }
+  /* Dark mode */
+  .dark .tech-canvas {
+    background: transparent;
+  }
+
+  /* ── Ambient glow divs (kept for layout.tsx compatibility) ─── */
+  .glow-primary,
+  .glow-secondary {
+    display: none;
+    pointer-events: none;
+    position: absolute;
+    z-index: 0;
+  }
+  .dark .glow-primary,
+  .dark .glow-secondary {
+    display: none;
+    background: transparent;
+  }
+
+  /* ── Legacy glow-effect ────────────────────────────────────── */
+  .glow-effect,
+  .dark .glow-effect {
+    display: none;
+    background: transparent;
+  }
+
+  /* ── premium-bg (sign-in/sign-up full-page view) ─────────── */
+  .premium-bg {
+    background: transparent;
+  }
+}
+
+@layer utilities {
+  /* ─── Safe area ────────────────────────────────────────── */
+  .safe-area-top    { padding-top: env(safe-area-inset-top); }
+  .safe-area-bottom { padding-bottom: env(safe-area-inset-bottom); }
+  .safe-area-left   { padding-left: env(safe-area-inset-left); }
+  .safe-area-right  { padding-right: env(safe-area-inset-right); }
+
+  @media (max-width: 768px) {
+    .no-select {
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+  }
+
+  @supports (-webkit-overflow-scrolling: touch) {
+    .overflow-y-auto, .overflow-x-auto {
+      -webkit-overflow-scrolling: touch;
+    }
+  }
+
+  /* ─── Tech card surfaces ───────────────────────────────── */
+
+  /* Base tech card — glassmorphic so dots show in gutters */
+  .tech-card {
+    background: hsl(var(--card) / 0.78);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid hsl(var(--border));
+    border-radius: calc(var(--radius) + 2px);
+    transition: box-shadow 0.2s ease, border-color 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 4px 12px rgba(0, 0, 0, 0.06);
+  }
+  .tech-card:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1), 0 6px 20px rgba(0, 0, 0, 0.08);
+  }
+  .dark .tech-card {
+    background: hsl(var(--card) / 0.65);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 6px 20px rgba(0, 0, 0, 0.3);
+  }
+  .dark .tech-card:hover {
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5), 0 8px 28px rgba(0, 0, 0, 0.35);
+  }
+
+  /* Accent top-border variants — clean neutral borders without tacky colored stripes */
+  .tech-card-blue,
+  .tech-card-emerald,
+  .tech-card-rose,
+  .tech-card-gold {
+    border-top: 1px solid hsl(var(--border));
+  }
+
+  /* Hover border */
+  .neon-border-hover {
+    transition: border-color 0.2s ease;
+  }
+  .neon-border-hover:hover {
+    border-color: hsl(var(--border) / 0.8) !important;
+  }
+
+  /* ─── Dot grid overlay (for elements that need their own dots) ── */
+  .tech-grid-bg {
+    background-image: radial-gradient(rgba(99, 102, 241, 0.13) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+  .dark .tech-grid-bg {
+    background-image: radial-gradient(rgba(255, 255, 255, 0.10) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  /* ─── Page header ──────────────────────────────────────── */
+  .tech-header {
+    background: hsl(var(--card) / 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid hsl(var(--border));
+  }
+
+  /* ─── Data surface ─────────────────────────────────────── */
+  .data-surface {
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+  }
+
+  /* ─── Tech label ───────────────────────────────────────── */
+  .tech-label {
+    font-family: var(--font-display), var(--font-body), sans-serif;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
+    display: block;
+  }
+
+  /* ─── Controls ─────────────────────────────────────────── */
+  .lumen-btn {
+    transition: background-color 200ms cubic-bezier(0.15, 0.83, 0.66, 1),
+      color 200ms cubic-bezier(0.15, 0.83, 0.66, 1),
+      border-color 200ms cubic-bezier(0.15, 0.83, 0.66, 1);
+  }
+  .lumen-chip {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-weight: 500;
+  }
+
+  /* ─── Scrollbar utilities ──────────────────────────────── */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Slim, self-hiding scrollbar — Telegram/macOS style.
+     Thumb is invisible until the container is hovered. */
+  .slim-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+    transition: scrollbar-color 0.25s ease;
+  }
+  .slim-scrollbar:hover,
+  .slim-scrollbar:focus-within {
+    scrollbar-color: hsl(var(--muted-foreground) / 0.35) transparent;
+  }
+  .slim-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .slim-scrollbar::-webkit-scrollbar-track,
+  .slim-scrollbar::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  .slim-scrollbar::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+    transition: background-color 0.25s ease;
+  }
+  .slim-scrollbar:hover::-webkit-scrollbar-thumb,
+  .slim-scrollbar:focus-within::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted-foreground) / 0.3);
+  }
+  .slim-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground) / 0.55);
+  }
+
+  /* ─── Glassmorphism (legacy) ───────────────────────────── */
+  .glass-card {
+    @apply bg-white/5 backdrop-blur-md border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)];
+  }
+  .glass-morphism {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid hsl(var(--border));
+  }
+  .glass-panel {
+    background: hsl(var(--card) / 0.7);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid hsl(var(--border));
+  }
+
+  /* ─── Clean text / box styles (no tacky neon glows) ────── */
+  .text-glow-blue,
+  .text-glow-green,
+  .text-glow-purple {
+    text-shadow: none;
+  }
+  .bg-glow-blue,
+  .bg-glow-green {
+    box-shadow: none;
+  }
+
+  /* ─── Animations ───────────────────────────────────────── */
+  @keyframes pulse-slow {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.85; }
+  }
+  .animate-pulse-slow {
+    animation: pulse-slow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  @keyframes spin-slow {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+  .animate-spin-slow {
+    animation: spin-slow 3s linear infinite;
+  }
+
+  /* Scanning shimmer — disabled to prevent distracting flashes */
+  .shimmer-sweep {
+    position: relative;
+    overflow: hidden;
+  }
+  .shimmer-sweep::after {
+    display: none;
+  }
+
+  /* Status indicator pulses — subtle opacity change, no expanding rings */
+  @keyframes radar-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.4; }
+  }
+  .animate-radar-pulse {
+    animation: radar-pulse 2.5s ease-in-out infinite;
+  }
+
+  @keyframes radar-pulse-green {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.4; }
+  }
+  .animate-radar-pulse-green {
+    animation: radar-pulse-green 2.5s ease-in-out infinite;
+  }
+
+  /* Data blink */
+  @keyframes data-blink {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.75; }
+  }
+  .animate-data-blink {
+    animation: data-blink 2s ease-in-out infinite;
+  }
+
+  /* Glow breathe */
+  .animate-glow-breathe {
+    box-shadow: none;
+  }
+
+  /* ── Telegram chat surface ─────────────────────────────────────────────── */
+  /* The chat wallpaper is now rendered by <TgWallpaper> (canvas gradient +
+     tiled pattern overlay), not a CSS class. */
+
+  /* Message bubble — tinted surface + tail, matching the TG channel look. */
+  .tg-bubble {
+    position: relative;
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border) / 0.5);
+    box-shadow: 0 1px 2px hsl(0 0% 0% / 0.06), 0 1px 8px hsl(0 0% 0% / 0.04);
+  }
+  .dark .tg-bubble {
+    background: hsl(var(--card) / 0.85);
+    border-color: hsl(var(--border) / 0.6);
+    box-shadow: 0 1px 2px hsl(0 0% 0% / 0.3);
+  }
+  /* Accent stripe down the left edge — TG's channel-post signature.
+     Used instead of a pointed tail because the bubble is `overflow-hidden`
+     (so the album grid sits flush to its edges) and would clip a pseudo-tail. */
+  .tg-bubble.tg-bubble-accent {
+    box-shadow: inset 3px 0 0 0 hsl(var(--primary) / 0.55),
+                0 1px 2px hsl(0 0% 0% / 0.06),
+                0 1px 8px hsl(0 0% 0% / 0.04);
+  }
+  .dark .tg-bubble.tg-bubble-accent {
+    box-shadow: inset 3px 0 0 0 hsl(var(--primary) / 0.65),
+                0 1px 2px hsl(0 0% 0% / 0.3);
+  }
+
+  /* ── Telegram message HTML formatting ──────────────────────────────────── */
+  .tg-message { white-space: pre-wrap; overflow-wrap: break-word; word-break: break-word; }
+  .tg-message b,
+  .tg-message strong { font-weight: 600; }
+  .tg-message i,
+  .tg-message em { font-style: italic; }
+  .tg-message u { text-decoration: underline; }
+  .tg-message s,
+  .tg-message del,
+  .tg-message strike { text-decoration: line-through; }
+  .tg-message code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.85em;
+    background: rgba(127, 127, 127, 0.15);
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+  }
+  .tg-message pre {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.82em;
+    background: rgba(0, 0, 0, 0.12);
+    padding: 0.6em 0.8em;
+    border-radius: 6px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-width: 100%;
+    margin: 0.35em 0;
+  }
+  .dark .tg-message pre { background: rgba(255, 255, 255, 0.06); }
+  .dark .tg-message code { background: rgba(255, 255, 255, 0.1); }
+  .tg-message a {
+    color: hsl(var(--primary));
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    word-break: break-all;
+  }
+  .tg-message a:hover { opacity: 0.8; }
+  /* Telegram spoiler — hide by default, reveal on click/hover */
+  .tg-message tg-spoiler,
+  .tg-message span[class*="spoiler"] {
+    background: currentColor;
+    border-radius: 2px;
+    cursor: pointer;
+    color: transparent;
+    transition: color 0.2s, background 0.2s;
+  }
+  .tg-message tg-spoiler:hover,
+  .tg-message span[class*="spoiler"]:hover {
+    background: transparent;
+    color: inherit;
+  }
+}
+
+/* Hermes immersive chat: hide the mobile bottom nav while inside an active chat */
+body.hermes-immersive .mobile-bottom-nav { display: none !important; }
+body.hermes-immersive .mobile-top-bar { display: none !important; }
+
+/* A dialog is open: the floating mobile bars (top bar z-60) sat on top of it and
+   covered its header — the symbol chart's close and fullscreen buttons. */
+body:has(.dialog-overlay[data-state="open"]) .mobile-top-bar,
+body:has(.dialog-overlay[data-state="open"]) .mobile-bottom-nav,
+body:has(.dialog-overlay[data-state="open"]) .nexal-fab { display: none !important; }

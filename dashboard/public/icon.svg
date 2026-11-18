@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="NEXAL">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b0b0b"/>
+      <stop offset="1" stop-color="#1c1c1c"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#a86a12"/>
+      <stop offset="0.45" stop-color="#f5b53f"/>
+      <stop offset="1" stop-color="#b8791a"/>
+    </linearGradient>
+    <mask id="slits">
+      <rect width="512" height="512" fill="#fff"/>
+      <rect x="327" y="100" width="5" height="126" fill="#000"/>
+      <rect x="341" y="100" width="5" height="126" fill="#000"/>
+      <rect x="355" y="100" width="5" height="126" fill="#000"/>
+    </mask>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <polygon mask="url(#slits)" fill="#ffffff"
+           points="136,126 166,126 310,270 310,178 376,126 376,386 310,386 136,212"/>
+  <polygon fill="url(#gold)" points="136,238 198,300 198,386 136,386"/>
+</svg>
