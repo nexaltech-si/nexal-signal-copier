@@ -41,7 +41,11 @@ venv.bak/
 *.db
 *.sqlite
 *.sqlite3
-*.json
+# Runtime data only. A blanket "*.json" here once kept dashboard/package.json,
+# package-lock.json, tsconfig.json and manifest.json out of a fresh "git add".
+data/*.json
+simulator/results/
+backups/
 
 # IDE
 .vscode/
