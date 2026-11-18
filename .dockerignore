@@ -1,0 +1,85 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Logs
+logs/
+*.log
+
+# Database files (will be in Docker volume)
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Telegram sessions (will be in Docker volume)
+.telethon/
+*.session
+*.session-journal
+
+# Node modules (dashboard)
+node_modules/
+.next/
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Tests
+tests/
+test_*.py
+*_test.py
+
+# Data cache (will be in Docker volume)
+data/
+
+# Not needed in the trading-bot (Python) image — these dominate the build context
+# and only bloat the image / slow `COPY . .`. The trading-bot app never reads them:
+#   mt5/       — MT5 EA source + self-hosted MT5 REST app (3+ GB), built/run separately
+#   dashboard/ — Next.js app, built from its own ./dashboard context
+# (This .dockerignore applies only to the trading-bot build, whose context is the repo
+#  root; the dashboard image builds from ./dashboard and is unaffected.)
+mt5/
+dashboard/
+backups/

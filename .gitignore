@@ -1,0 +1,88 @@
+/mt5/config/
+.env.backup
+*.session
+sessions/
+.env
+.env.local
+.credentials
+logs/*
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Python lib directories (but not Next.js src/lib)
+/lib/
+/lib64/
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+*.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Backup files
+
+*.backup
+*_backup_*
+
+# Simulator
+simulator/results/
+simulator.session*
+EquityProtection_EA
+
+DESIGN.md
+.agents/*
+.claude/
+.rules/
+dashboard-mockup.html
+.disk_check.txt
+data/trading_bot.db-shm
+data/trading_bot.db-wal
+tmp/*
+# Database backups written by deploy.sh
+backups/
+data/*
+
+# Local account data written by the MT5 bridge (balances, account numbers)
+mt5/protection_config/
+*.bak
+*.tmp

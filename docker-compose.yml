@@ -1,0 +1,154 @@
+name: nexal
+
+services:
+  # Trading Bot Main Application
+  trading-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: telegram-trading-bot
+    restart: unless-stopped
+    stop_grace_period: 30s
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=file:/app/data/trading_bot.db
+      - PYTHONUNBUFFERED=1
+      - API_SERVER_PORT=8001
+      - API_SERVER_HOST=0.0.0.0
+      - REDIS_URL=redis://trading-redis:6379
+    volumes:
+      # Shared database volume - CRITICAL for dashboard to read bot's data
+      - db-data:/app/data
+      # Telegram session persistence (directory mount for session files)
+      - ./sessions:/app/sessions
+      # Logs persistence
+      - ./logs:/app/logs
+      # News cache persistence
+      - ./data:/app/data/cache
+      # Environment file for hot-reload functionality
+      - ./.env:/app/.env:ro
+    ports:
+      - "127.0.0.1:8001:8001"  # Python API server for dashboard (X-Internal-Token)
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 2g
+    pids_limit: 256
+    extra_hosts:
+      # Services on the Docker host (a local Ollama, a brain endpoint). Override with
+      # the gateway IP of trading-network if "host-gateway" is not reachable on your host.
+      - "host.docker.internal:${DOCKER_HOST_GATEWAY:-host-gateway}"
+    networks:
+      - trading-network
+      - mt5-net
+    depends_on:
+      - dashboard
+
+  # Dashboard (Next.js)
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+        - NEXT_PUBLIC_CLERK_SIGN_IN_URL=${NEXT_PUBLIC_CLERK_SIGN_IN_URL}
+        - NEXT_PUBLIC_CLERK_SIGN_UP_URL=${NEXT_PUBLIC_CLERK_SIGN_UP_URL}
+        - NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL=${NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL}
+        - NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=${NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL}
+    container_name: trading-dashboard
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 2g
+    pids_limit: 256
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=file:/app/data/trading_bot.db
+      - PORT=3000
+      - REDIS_URL=redis://trading-redis:6379
+      - PYTHON_API_URL=http://trading-bot:8001
+    ports:
+      # Loopback only: open http://localhost:3000 on the server, or reach it through an
+      # SSH tunnel / your reverse proxy. Never publish this port to the internet directly.
+      - "127.0.0.1:${DASHBOARD_PORT:-3000}:3000"
+    extra_hosts:
+      - "host.docker.internal:${DOCKER_HOST_GATEWAY:-host-gateway}"
+    volumes:
+      # SAME database volume as trading-bot - enables real-time data sync
+      - db-data:/app/data
+      # Logs access for log viewer (read-only)
+      - ./logs:/app/logs:ro
+    networks:
+      - traefik-public
+      - trading-network
+      - mt5-net
+    labels:
+      # Enable Traefik for this container
+      traefik.enable: true
+      traefik.docker.network: traefik-public
+
+      # HTTPS Router (HTTP->HTTPS redirect is handled globally in traefik.yml)
+      traefik.http.routers.mt-dashboard-https.rule: Host(`${DASHBOARD_DOMAIN}`)
+      traefik.http.routers.mt-dashboard-https.entrypoints: websecure
+      traefik.http.routers.mt-dashboard-https.tls: true
+      traefik.http.routers.mt-dashboard-https.tls.certresolver: letsencrypt
+      traefik.http.routers.mt-dashboard-https.middlewares: secHeadersSameOrigin@file,cloudflare-only@file
+      traefik.http.routers.mt-dashboard-https.service: mt-dashboard
+
+      # Service configuration
+      traefik.http.services.mt-dashboard.loadbalancer.server.port: 3000
+
+  # Redis for real-time data streaming
+  redis:
+    image: redis:7-alpine
+    container_name: trading-redis
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    pids_limit: 64
+    networks:
+      - trading-network
+      - mt5-net
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+
+  # Signal Validator API (optional — runs on same server for internal routing)
+  # Set SIGNAL_VALIDATOR_URL=http://signal-validator:8000 in .env to use this
+  # Uncomment and fill in your image to enable:
+  # signal-validator:
+  #   image: your-signal-validator-image:latest
+  #   container_name: signal-validator
+  #   restart: unless-stopped
+  #   networks:
+  #     - trading-network
+  #   # Expose port only if you need external access (not required for internal use):
+  #   # ports:
+  #   #   - "8000:8000"
+
+# Named volumes for data persistence
+# These volumes persist across deployments and container recreations
+# IMPORTANT: Never use 'docker compose down -v' as it deletes these volumes
+# Safe commands: 'docker compose down' or 'docker compose stop'
+volumes:
+  db-data:
+    driver: local
+    name: trading-bot-database  # Persists all trading data, positions, and history
+  telegram-sessions:
+    driver: local
+    name: telegram-sessions  # Persists Telegram authentication
+  redis-data:
+    driver: local
+    name: trading-redis  # Persists Redis data
+
+# Network for container communication
+networks:
+  traefik-public:
+    external: true
+  mt5-net:
+    external: true
+  trading-network:
+    driver: bridge

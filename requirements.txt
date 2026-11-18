@@ -1,0 +1,90 @@
+# Core dependencies
+telethon==1.34.0
+metaapi-cloud-sdk==29.0.0
+python-dotenv>=1.2.2
+pydantic>=2.9.0
+pydantic-settings>=2.14.2
+
+# Telegram Bot API (for sending messages)
+# Note: v20.8 requires httpx~=0.26, which conflicts with newer packages
+# Using v21.x which supports httpx>=0.27
+python-telegram-bot>=21.0,<22.0
+
+# Discord signal source (bot gateway client) - see src/integrations/discord/
+discord.py>=2.5,<3.0
+
+# API server for dashboard
+fastapi==0.139.2
+starlette==1.3.1  # pinned for CVE fixes (PYSEC-2026-161/248/249/2280/2281/1941/1943); fastapi 0.139.2 allows starlette>=0.46
+uvicorn[standard]==0.24.0
+
+# AI clients
+openai>=1.54.0
+ollama>=0.1.6
+# Pin httpx to compatible version for both metaapi-cloud-sdk and python-telegram-bot
+httpx>=0.27.0,<0.29.0
+
+# Database - Prisma ORM
+prisma>=0.11.0
+
+# Legacy Database (can be removed after migration)
+# sqlalchemy==2.0.23
+# alembic==1.13.0
+# psycopg2-binary==2.9.9
+
+# Data processing
+pandas==2.0.3
+# Capped below 2.0: pandas==2.0.3's compiled C extensions are ABI-incompatible
+# with numpy 2.x (binary incompatibility crash on import) — verified locally.
+numpy>=1.26.0,<2.0.0
+Pillow>=13.0.0  # Image dimension pre-filter for vision signal extraction
+
+# Async support - ensure compatibility
+aiohttp>=3.14.3,<4.0.0
+certifi>=2026.10.19
+
+# Web scraping
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+brotli>=1.2.1  # Required for decoding brotli-compressed responses (e.g., Forex Factory)
+
+# Logging and monitoring
+loguru==0.7.2
+
+# Utilities
+pytz==2023.3.post1
+python-dateutil==2.8.2
+cryptography>=50.0.0
+
+# Redis for real-time data streaming
+redis>=5.0.0
+
+# Optional analytics layer (read-only, no live trading impact)
+# Only offline gs_quant.timeseries functions are used (RSI/MACD/max-drawdown/
+# volatility on local pandas data) — no Marquee account/credentials required.
+# Note: gs_quant.timeseries.sharpe_ratio is NOT used (it requires a live
+# Marquee session) — Sharpe is computed manually from offline returns().
+# Pulls in ~400MB of transitive deps; pin numpy<2.0 above is required for
+# ABI compatibility with the pinned pandas==2.0.3.
+gs-quant>=1.0.0
+
+# Testing (optional)
+pytest==9.1.1
+pytest-asyncio==1.4.0
+
+# Security floors for transitive deps (SECURITY_AUDIT.md M-10). The current
+# image already resolves to these or newer; the floors stop a resolver
+# downgrade from silently reintroducing the advisories.
+urllib3>=2.8.0
+werkzeug>=3.1.9
+anyio>=4.14.2
+multidict>=6.9.1
+# The python:3.11 base image ships setuptools 79, which vendors wheel 0.45.1
+# (GHSA-8rrh-rw8j-w5fx) and jaraco.context 5.3.0 (CVE-2026-23949). 80.10.2+
+# vendors the fixed versions. 83.0.0 fixes PYSEC-2026-3447. It no longer ships
+# pkg_resources: our code doesn't use it, and pytz only tries it (guarded) when a
+# zoneinfo file is missing.
+setuptools>=83.0.0
+
+# Web Push (phone / browser notifications) - see src/services/event_pusher.py
+pywebpush==2.5.0
